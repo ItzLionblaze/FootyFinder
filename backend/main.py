@@ -1,4 +1,6 @@
 from typing import Optional
+from pathlib import Path
+import os
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Header
@@ -6,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from auth import create_access_token, decode_access_token, verify_google_token
 from database import (
@@ -22,10 +24,18 @@ from database import (
 
 app = FastAPI(title="FootyFinder API")
 
-# Allow the Next.js frontend (localhost:3000) to talk to this API
+# Comma-separated list, e.g. "http://localhost:3000,https://your-app.vercel.app"
+_cors_origins = [
+    origin.strip()
+    for origin in os.environ.get(
+        "CORS_ORIGINS", "http://localhost:3000"
+    ).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -76,7 +86,7 @@ def health_check():
     return {"status": "ok"}
 
 
-def _parse_bearer_token(authorization: Optional[str]) -> Optional[str]:
+def _parse_bearer_token(authorization: Optional[str] = None) -> Optional[str]:
     if not authorization or not authorization.startswith("Bearer "):
         return None
     return authorization.removeprefix("Bearer ").strip()
@@ -192,10 +202,10 @@ def recent_parks(authorization: Optional[str] = Header(None)):
         """
         SELECT location, zip_code, latitude, longitude, place_id, place_address, created_at
         FROM games
-        WHERE host_user_id = ?
+        WHERE host_user_id = %s
           AND latitude IS NOT NULL
           AND longitude IS NOT NULL
-        ORDER BY datetime(created_at) DESC, id DESC
+        ORDER BY created_at DESC, id DESC
         """,
         (current_user["id"],),
     ).fetchall()
@@ -266,14 +276,15 @@ def create_game(
     players_json = json.dumps([host])
 
     connection = get_connection()
-    cursor = connection.execute(
+    inserted = connection.execute(
         """
         INSERT INTO games (
             title, location, zip_code, latitude, longitude, place_id,
             place_address, date_time, min_players, max_players, player_count,
             player_names, host_user_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
         """,
         (
             game.title.strip(),
@@ -290,11 +301,11 @@ def create_game(
             players_json,
             current_user["id"],
         ),
-    )
+    ).fetchone()
     connection.commit()
 
     new_row = connection.execute(
-        "SELECT * FROM games WHERE id = ?", (cursor.lastrowid,)
+        "SELECT * FROM games WHERE id = %s", (inserted["id"],)
     ).fetchone()
     connection.close()
 
@@ -308,7 +319,7 @@ def cancel_game(
     current_user = _get_current_user(authorization)
     connection = get_connection()
     row = connection.execute(
-        "SELECT * FROM games WHERE id = ?", (game_id,)
+        "SELECT * FROM games WHERE id = %s", (game_id,)
     ).fetchone()
 
     if not row:
@@ -330,11 +341,11 @@ def cancel_game(
 
     if row["status"] != "cancelled":
         connection.execute(
-            "UPDATE games SET status = 'cancelled' WHERE id = ?", (game_id,)
+            "UPDATE games SET status = %s WHERE id = %s", ("cancelled", game_id)
         )
         connection.commit()
         row = connection.execute(
-            "SELECT * FROM games WHERE id = ?", (game_id,)
+            "SELECT * FROM games WHERE id = %s", (game_id,)
         ).fetchone()
 
     connection.close()
@@ -346,7 +357,7 @@ def join_game(game_id: int, authorization: Optional[str] = Header(None)):
     current_user = _get_current_user(authorization)
     connection = get_connection()
     row = connection.execute(
-        "SELECT * FROM games WHERE id = ?", (game_id,)
+        "SELECT * FROM games WHERE id = %s", (game_id,)
     ).fetchone()
 
     if not row:
@@ -397,14 +408,14 @@ def join_game(game_id: int, authorization: Optional[str] = Header(None)):
     connection.execute(
         """
         UPDATE games
-        SET player_names = ?, player_count = ?
-        WHERE id = ?
+        SET player_names = %s, player_count = %s
+        WHERE id = %s
         """,
         (json.dumps(players), new_count, game_id),
     )
     connection.commit()
     updated = connection.execute(
-        "SELECT * FROM games WHERE id = ?", (game_id,)
+        "SELECT * FROM games WHERE id = %s", (game_id,)
     ).fetchone()
     connection.close()
     return row_to_game(updated)
@@ -419,7 +430,7 @@ def set_game_score(
     current_user = _get_current_user(authorization)
     connection = get_connection()
     row = connection.execute(
-        "SELECT * FROM games WHERE id = ?", (game_id,)
+        "SELECT * FROM games WHERE id = %s", (game_id,)
     ).fetchone()
 
     if not row:
@@ -447,14 +458,14 @@ def set_game_score(
     connection.execute(
         """
         UPDATE games
-        SET score_team_a = ?, score_team_b = ?
-        WHERE id = ?
+        SET score_team_a = %s, score_team_b = %s
+        WHERE id = %s
         """,
         (body.score_team_a, body.score_team_b, game_id),
     )
     connection.commit()
     updated = connection.execute(
-        "SELECT * FROM games WHERE id = ?", (game_id,)
+        "SELECT * FROM games WHERE id = %s", (game_id,)
     ).fetchone()
     connection.close()
     return row_to_game(updated)

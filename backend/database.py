@@ -1,18 +1,18 @@
 import json
-import sqlite3
+import os
 from datetime import datetime
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
-# Database file lives in the backend folder
-DATABASE_PATH = Path(__file__).parent / "footyfinder.db"
+import psycopg
+from psycopg.rows import dict_row
+
+DATABASE_URL_DEFAULT = "postgresql://shabana@localhost:5432/footyfinder"
 
 
 def get_connection():
-    """Open a connection to the SQLite database."""
-    connection = sqlite3.connect(DATABASE_PATH)
-    connection.row_factory = sqlite3.Row
-    return connection
+    """Open a connection to the PostgreSQL database."""
+    database_url = os.environ.get("DATABASE_URL", DATABASE_URL_DEFAULT)
+    return psycopg.connect(database_url, row_factory=dict_row)
 
 
 def init_db():
@@ -21,12 +21,12 @@ def init_db():
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS games (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             title TEXT NOT NULL,
             location TEXT NOT NULL DEFAULT 'Eastvale, CA',
             zip_code TEXT NOT NULL DEFAULT '92880',
-            latitude REAL,
-            longitude REAL,
+            latitude DOUBLE PRECISION,
+            longitude DOUBLE PRECISION,
             place_id TEXT,
             place_address TEXT,
             date_time TEXT NOT NULL,
@@ -38,34 +38,10 @@ def init_db():
             score_team_a INTEGER,
             score_team_b INTEGER,
             status TEXT NOT NULL DEFAULT 'active',
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
-
-    columns = [
-        row[1] for row in connection.execute("PRAGMA table_info(games)").fetchall()
-    ]
-    if "zip_code" not in columns:
-        connection.execute(
-            "ALTER TABLE games ADD COLUMN zip_code TEXT NOT NULL DEFAULT '92880'"
-        )
-    optional_columns = {
-        "latitude": "REAL",
-        "longitude": "REAL",
-        "place_id": "TEXT",
-        "place_address": "TEXT",
-        "host_user_id": "INTEGER",
-        "min_players": "INTEGER NOT NULL DEFAULT 10",
-        "score_team_a": "INTEGER",
-        "score_team_b": "INTEGER",
-    }
-    for column_name, column_type in optional_columns.items():
-        if column_name not in columns:
-            connection.execute(
-                f"ALTER TABLE games ADD COLUMN {column_name} {column_type}"
-            )
-
     connection.commit()
     connection.close()
 
@@ -76,13 +52,13 @@ def init_users_table():
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             google_id TEXT UNIQUE NOT NULL,
             email TEXT NOT NULL,
             first_name TEXT NOT NULL DEFAULT '',
             last_name TEXT NOT NULL DEFAULT '',
             picture TEXT NOT NULL DEFAULT '',
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -104,7 +80,7 @@ def row_to_user(row):
 def get_user_by_id(user_id):
     connection = get_connection()
     row = connection.execute(
-        "SELECT * FROM users WHERE id = ?", (user_id,)
+        "SELECT * FROM users WHERE id = %s", (user_id,)
     ).fetchone()
     connection.close()
     return row
@@ -113,32 +89,33 @@ def get_user_by_id(user_id):
 def upsert_user(google_id, email, first_name, last_name, picture):
     connection = get_connection()
     existing = connection.execute(
-        "SELECT * FROM users WHERE google_id = ?", (google_id,)
+        "SELECT * FROM users WHERE google_id = %s", (google_id,)
     ).fetchone()
 
     if existing:
         connection.execute(
             """
             UPDATE users
-            SET email = ?, first_name = ?, last_name = ?, picture = ?
-            WHERE google_id = ?
+            SET email = %s, first_name = %s, last_name = %s, picture = %s
+            WHERE google_id = %s
             """,
             (email, first_name, last_name, picture, google_id),
         )
         user_id = existing["id"]
     else:
-        cursor = connection.execute(
+        row = connection.execute(
             """
             INSERT INTO users (google_id, email, first_name, last_name, picture)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
             """,
             (google_id, email, first_name, last_name, picture),
-        )
-        user_id = cursor.lastrowid
+        ).fetchone()
+        user_id = row["id"]
 
     connection.commit()
     row = connection.execute(
-        "SELECT * FROM users WHERE id = ?", (user_id,)
+        "SELECT * FROM users WHERE id = %s", (user_id,)
     ).fetchone()
     connection.close()
     return row
@@ -176,9 +153,7 @@ def compute_game_status(row):
     player_count = row["player_count"] or 0
     max_players = row["max_players"] or 0
     min_players = (
-        row["min_players"]
-        if "min_players" in row.keys() and row["min_players"] is not None
-        else max_players
+        row["min_players"] if row.get("min_players") is not None else max_players
     )
 
     if max_players > 0 and player_count >= max_players:
@@ -191,36 +166,33 @@ def compute_game_status(row):
 def row_to_game(row):
     """Convert a database row into a dictionary for the API."""
     min_players = (
-        row["min_players"]
-        if "min_players" in row.keys() and row["min_players"] is not None
-        else row["max_players"]
+        row["min_players"] if row.get("min_players") is not None else row["max_players"]
     )
+    player_names = row["player_names"]
+    if isinstance(player_names, str):
+        player_names = json.loads(player_names)
+
+    created_at = row["created_at"]
+    if hasattr(created_at, "isoformat"):
+        created_at = created_at.isoformat()
 
     return {
         "id": row["id"],
         "title": row["title"],
         "location": row["location"],
-        "zip_code": row["zip_code"] if "zip_code" in row.keys() else "92880",
-        "latitude": row["latitude"] if "latitude" in row.keys() else None,
-        "longitude": row["longitude"] if "longitude" in row.keys() else None,
-        "place_id": row["place_id"] if "place_id" in row.keys() else None,
-        "place_address": (
-            row["place_address"] if "place_address" in row.keys() else None
-        ),
+        "zip_code": row.get("zip_code") or "92880",
+        "latitude": row.get("latitude"),
+        "longitude": row.get("longitude"),
+        "place_id": row.get("place_id"),
+        "place_address": row.get("place_address"),
         "date_time": row["date_time"],
         "min_players": min_players,
         "max_players": row["max_players"],
         "player_count": row["player_count"],
-        "player_names": json.loads(row["player_names"]),
-        "host_user_id": (
-            row["host_user_id"] if "host_user_id" in row.keys() else None
-        ),
-        "score_team_a": (
-            row["score_team_a"] if "score_team_a" in row.keys() else None
-        ),
-        "score_team_b": (
-            row["score_team_b"] if "score_team_b" in row.keys() else None
-        ),
+        "player_names": player_names,
+        "host_user_id": row.get("host_user_id"),
+        "score_team_a": row.get("score_team_a"),
+        "score_team_b": row.get("score_team_b"),
         "status": compute_game_status(row),
-        "created_at": row["created_at"],
+        "created_at": created_at,
     }

@@ -5,7 +5,8 @@ import LoginButton from "./components/LoginButton";
 import ParkPicker from "./components/ParkPicker";
 import { useAuth } from "./context/AuthContext";
 
-const API_URL = "http://localhost:8000";
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const SKILL_LEVELS = ["Beginner", "Intermediate", "Advanced", "Expert"];
 const AGE_RANGES = ["12+", "18+", "12-17"];
 const STATUS_STYLES = {
