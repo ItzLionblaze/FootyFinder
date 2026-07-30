@@ -83,7 +83,12 @@ def read_root():
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "google_client_id_configured": bool(
+            (os.environ.get("GOOGLE_CLIENT_ID") or "").strip()
+        ),
+    }
 
 
 def _parse_bearer_token(authorization: Optional[str] = None) -> Optional[str]:
