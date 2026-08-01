@@ -147,7 +147,11 @@ def auth_me(authorization: Optional[str] = Header(None)):
 
 
 @app.get("/games")
-def list_games(zip_code: Optional[str] = None, host_name: Optional[str] = None):
+def list_games(
+    zip_code: Optional[str] = None,
+    host_name: Optional[str] = None,
+    q: Optional[str] = None,
+):
     connection = get_connection()
     rows = connection.execute("SELECT * FROM games").fetchall()
     connection.close()
@@ -179,6 +183,10 @@ def list_games(zip_code: Optional[str] = None, host_name: Optional[str] = None):
         name_query = host_name.strip().lower()
         games = [game for game in games if _game_matches_host(game, name_query)]
 
+    if q and q.strip():
+        query = q.strip().lower()
+        games = [game for game in games if _game_matches_query(game, query)]
+
     return games
 
 
@@ -196,6 +204,27 @@ def _game_matches_host(game, name_query):
         ):
             return True
     return False
+
+
+def _game_matches_query(game, query):
+    host_name = ""
+    for player in game.get("player_names", []):
+        if player.get("is_host"):
+            host_name = (
+                f"{player.get('first_name') or ''} {player.get('last_name') or ''}"
+            ).strip()
+            break
+
+    haystack = " ".join(
+        [
+            game.get("title") or "",
+            game.get("location") or "",
+            game.get("place_address") or "",
+            game.get("zip_code") or "",
+            host_name,
+        ]
+    ).lower()
+    return query in haystack
 
 
 @app.get("/parks/recent")

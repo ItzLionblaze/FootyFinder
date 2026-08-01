@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const EASTVALE_CENTER = { lat: 33.9636, lng: -117.5642 };
+const DEFAULT_CENTER = { lat: 33.9636, lng: -117.5642 };
 let mapsPromise;
 
 function loadGoogleMaps(apiKey) {
@@ -40,8 +40,7 @@ function loadGoogleMaps(apiKey) {
       }
 
       const script = document.createElement("script");
-      // Avoid loading=async — onload can fire before Map is ready.
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&v=weekly`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly`;
       script.async = true;
       script.dataset.footyfinderGoogleMaps = "true";
       script.onload = () => {
@@ -64,27 +63,63 @@ function loadGoogleMaps(apiKey) {
 function getPostalCode(addressComponents = []) {
   return (
     addressComponents.find((component) =>
-      component.types.includes("postal_code"),
-    )?.longText ||
-    addressComponents.find((component) =>
-      component.types.includes("postal_code"),
-    )?.long_name ||
-    ""
+      component.types?.includes("postal_code"),
+    )?.long_name || ""
   );
 }
 
 export default function ParkPicker({ value, onChange }) {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const mapElementRef = useRef(null);
-  const searchContainerRef = useRef(null);
   const mapRef = useRef(null);
   const markerRef = useRef(null);
+  const geocoderRef = useRef(null);
   const onChangeRef = useRef(onChange);
   const [loadError, setLoadError] = useState("");
+  const [areaQuery, setAreaQuery] = useState("");
+  const [areaHint, setAreaHint] = useState("");
+  const [areaSearching, setAreaSearching] = useState(false);
 
   useEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
+
+  function goToArea(event) {
+    event?.preventDefault?.();
+    const query = areaQuery.trim();
+    if (!query || !geocoderRef.current || !mapRef.current) {
+      return;
+    }
+
+    setAreaSearching(true);
+    setLoadError("");
+    setAreaHint("");
+
+    geocoderRef.current.geocode(
+      { address: query, region: "us" },
+      (results, status) => {
+        setAreaSearching(false);
+        if (status !== "OK" || !results?.[0]) {
+          setLoadError(
+            "Could not find that city or zip code. Try another search.",
+          );
+          return;
+        }
+
+        const result = results[0];
+        if (result.geometry.viewport) {
+          mapRef.current.fitBounds(result.geometry.viewport);
+        } else {
+          mapRef.current.panTo(result.geometry.location);
+          mapRef.current.setZoom(13);
+        }
+
+        setAreaHint(
+          `Showing ${result.formatted_address}. Click the map to drop a pin on the park.`,
+        );
+      },
+    );
+  }
 
   useEffect(() => {
     if (!apiKey) {
@@ -93,84 +128,40 @@ export default function ParkPicker({ value, onChange }) {
 
     let cancelled = false;
     let mapClickListener;
-    let autocompleteElement;
-    let selectPlace;
 
     loadGoogleMaps(apiKey)
       .then(async (google) => {
-        if (cancelled || !mapElementRef.current || !searchContainerRef.current) {
+        if (cancelled || !mapElementRef.current) {
           return;
         }
 
         const { Map } = await google.maps.importLibrary("maps");
-        const { PlaceAutocompleteElement } =
-          await google.maps.importLibrary("places");
 
-        if (cancelled || !mapElementRef.current || !searchContainerRef.current) {
+        if (cancelled || !mapElementRef.current) {
           return;
         }
 
+        const startCenter =
+          value.latitude != null && value.longitude != null
+            ? { lat: value.latitude, lng: value.longitude }
+            : DEFAULT_CENTER;
+
         const map = new Map(mapElementRef.current, {
-          center: EASTVALE_CENTER,
-          zoom: 12,
+          center: startCenter,
+          zoom: value.latitude != null ? 15 : 10,
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: false,
         });
         mapRef.current = map;
+        geocoderRef.current = new google.maps.Geocoder();
 
         const marker = new google.maps.Marker({
-          map: null,
-          position: EASTVALE_CENTER,
+          map: value.latitude != null ? map : null,
+          position: startCenter,
         });
         markerRef.current = marker;
 
-        autocompleteElement = new PlaceAutocompleteElement({
-          includedPrimaryTypes: ["park"],
-          includedRegionCodes: ["us"],
-          locationBias: { center: EASTVALE_CENTER, radius: 50000 },
-        });
-        autocompleteElement.placeholder = "Search parks near Eastvale";
-        autocompleteElement.style.width = "100%";
-        searchContainerRef.current.replaceChildren(autocompleteElement);
-
-        selectPlace = async (event) => {
-          const place = event.placePrediction.toPlace();
-          await place.fetchFields({
-            fields: [
-              "addressComponents",
-              "displayName",
-              "formattedAddress",
-              "location",
-            ],
-          });
-
-          if (!place.location) {
-            setLoadError("Choose a park from the search suggestions.");
-            return;
-          }
-
-          const position = {
-            lat: place.location.lat(),
-            lng: place.location.lng(),
-          };
-          marker.setMap(map);
-          marker.setPosition(position);
-          map.panTo(position);
-          map.setZoom(16);
-          setLoadError("");
-          onChangeRef.current({
-            location: place.displayName || place.formattedAddress,
-            zip_code: getPostalCode(place.addressComponents),
-            latitude: position.lat,
-            longitude: position.lng,
-            place_id: place.id || "",
-            place_address: place.formattedAddress || "",
-          });
-        };
-        autocompleteElement.addEventListener("gmp-select", selectPlace);
-
-        const geocoder = new google.maps.Geocoder();
         mapClickListener = map.addListener("click", (event) => {
           const position = {
             lat: event.latLng.lat(),
@@ -179,18 +170,25 @@ export default function ParkPicker({ value, onChange }) {
           marker.setMap(map);
           marker.setPosition(position);
 
-          geocoder.geocode({ location: position }, (results, status) => {
-            const result = status === "OK" ? results?.[0] : null;
-            const address = result?.formatted_address || "Pinned park location";
-            onChangeRef.current({
-              location: result?.address_components?.[0]?.long_name || address,
-              zip_code: getPostalCode(result?.address_components),
-              latitude: position.lat,
-              longitude: position.lng,
-              place_id: result?.place_id || "",
-              place_address: address,
-            });
-          });
+          geocoderRef.current.geocode(
+            { location: position },
+            (results, status) => {
+              const result = status === "OK" ? results?.[0] : null;
+              const address =
+                result?.formatted_address || "Pinned park location";
+              onChangeRef.current({
+                location:
+                  result?.address_components?.[0]?.long_name || address,
+                zip_code: getPostalCode(result?.address_components),
+                latitude: position.lat,
+                longitude: position.lng,
+                place_id: result?.place_id || "",
+                place_address: address,
+              });
+              setAreaHint("");
+              setLoadError("");
+            },
+          );
         });
       })
       .catch((error) => {
@@ -206,10 +204,9 @@ export default function ParkPicker({ value, onChange }) {
     return () => {
       cancelled = true;
       mapClickListener?.remove();
-      if (autocompleteElement && selectPlace) {
-        autocompleteElement.removeEventListener("gmp-select", selectPlace);
-      }
     };
+    // Initial map mount only — selected pin is synced in the effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiKey]);
 
   useEffect(() => {
@@ -238,19 +235,40 @@ export default function ParkPicker({ value, onChange }) {
   return (
     <div>
       <label
-        htmlFor="park-search"
+        htmlFor="area-search"
         className="block text-sm font-medium text-zinc-700"
       >
-        Search for a park
+        Search city or zip code
       </label>
-      <div
-        ref={searchContainerRef}
-        id="park-search"
-        className="mt-1 min-h-12 w-full"
-      />
+      <div className="mt-1 flex gap-2">
+        <input
+          id="area-search"
+          type="search"
+          value={areaQuery}
+          onChange={(event) => setAreaQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              goToArea(event);
+            }
+          }}
+          placeholder="e.g. 92880 or Corona, CA"
+          className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
+        />
+        <button
+          type="button"
+          onClick={goToArea}
+          disabled={areaSearching || !areaQuery.trim()}
+          className="shrink-0 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {areaSearching ? "Going..." : "Go"}
+        </button>
+      </div>
       <p className="mt-2 text-xs text-zinc-500">
-        Choose a search result or click the map to place the game pin.
+        Search a city or zip, then click the map to drop a pin on the park.
       </p>
+      {areaHint && <p className="mt-2 text-sm text-green-800">{areaHint}</p>}
+
       <div
         ref={mapElementRef}
         className="mt-3 h-80 w-full overflow-hidden rounded-lg border border-zinc-300 bg-zinc-100"
