@@ -359,7 +359,7 @@ export default function Home() {
                   type="text"
                   value={formData.first_name}
                   onChange={handleInputChange}
-                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
+                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
                 />
               </div>
               <div>
@@ -372,7 +372,7 @@ export default function Home() {
                   type="text"
                   value={formData.last_name}
                   onChange={handleInputChange}
-                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
+                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
                 />
               </div>
               <div>
@@ -384,7 +384,7 @@ export default function Home() {
                   name="skill_level"
                   value={formData.skill_level}
                   onChange={handleInputChange}
-                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
+                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
                 >
                   {SKILL_LEVELS.map((level) => (
                     <option key={level} value={level}>
@@ -402,7 +402,7 @@ export default function Home() {
                   name="age_range"
                   value={formData.age_range}
                   onChange={handleInputChange}
-                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
+                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
                 >
                   {AGE_RANGES.map((range) => (
                     <option key={range} value={range}>
@@ -428,7 +428,7 @@ export default function Home() {
                   value={formData.title}
                   onChange={handleInputChange}
                   placeholder="Saturday Morning Kickabout"
-                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
+                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
                 />
               </div>
 
@@ -526,7 +526,7 @@ export default function Home() {
                   type="datetime-local"
                   value={formData.date_time}
                   onChange={handleInputChange}
-                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
+                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
                 />
               </div>
               <div>
@@ -541,7 +541,7 @@ export default function Home() {
                   max="30"
                   value={formData.min_players}
                   onChange={handleInputChange}
-                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
+                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
                 />
               </div>
               <div>
@@ -556,7 +556,7 @@ export default function Home() {
                   max="30"
                   value={formData.max_players}
                   onChange={handleInputChange}
-                  className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
+                  className="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
                 />
               </div>
             </div>

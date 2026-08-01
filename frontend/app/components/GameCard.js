@@ -201,7 +201,7 @@ export default function GameCard({
                   onChange={(event) =>
                     onScoreDraftChange?.(game.id, "score_team_a", event.target.value)
                   }
-                  className="mt-1 w-20 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm"
+                  className="mt-1 w-20 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900"
                 />
               </div>
               <span className="pb-2 text-sm font-semibold text-zinc-500">–</span>
@@ -220,7 +220,7 @@ export default function GameCard({
                   onChange={(event) =>
                     onScoreDraftChange?.(game.id, "score_team_b", event.target.value)
                   }
-                  className="mt-1 w-20 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm"
+                  className="mt-1 w-20 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900"
                 />
               </div>
               <button

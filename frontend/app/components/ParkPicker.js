@@ -253,7 +253,7 @@ export default function ParkPicker({ value, onChange }) {
             }
           }}
           placeholder="e.g. 92880 or Corona, CA"
-          className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
+          className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-200"
         />
         <button
           type="button"
