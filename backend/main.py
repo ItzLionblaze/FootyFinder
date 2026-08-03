@@ -65,9 +65,17 @@ class GoogleAuthRequest(BaseModel):
     token: str
 
 
+class PlayerTeamAssignment(BaseModel):
+    user_id: Optional[int] = None
+    first_name: str = ""
+    last_name: str = ""
+    team: Optional[str] = None
+
+
 class GameScoreUpdate(BaseModel):
     score_team_a: int
     score_team_b: int
+    player_teams: Optional[list[PlayerTeamAssignment]] = None
 
 
 @app.on_event("startup")
@@ -489,13 +497,67 @@ def set_game_score(
         connection.close()
         raise HTTPException(status_code=400, detail="Scores cannot be negative")
 
+    players = list(game["player_names"])
+    if body.player_teams is not None:
+        claimed_indexes = set()
+        for assignment in body.player_teams:
+            team = assignment.team
+            if team is not None:
+                team = str(team).strip().lower()
+                if team not in {"a", "b"}:
+                    connection.close()
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Each player team must be 'a', 'b', or null",
+                    )
+
+            matched_index = None
+            for index, player in enumerate(players):
+                if index in claimed_indexes:
+                    continue
+                same_user = (
+                    assignment.user_id is not None
+                    and player.get("user_id") == assignment.user_id
+                )
+                same_name = (
+                    (player.get("first_name") or "").strip().lower()
+                    == assignment.first_name.strip().lower()
+                    and (player.get("last_name") or "").strip().lower()
+                    == assignment.last_name.strip().lower()
+                )
+                if same_user or (assignment.user_id is None and same_name):
+                    matched_index = index
+                    break
+
+            if matched_index is None:
+                connection.close()
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        "Could not find player "
+                        f"{assignment.first_name} {assignment.last_name}".strip()
+                    ),
+                )
+
+            claimed_indexes.add(matched_index)
+            player = players[matched_index]
+            if team is None:
+                player.pop("team", None)
+            else:
+                player["team"] = team
+
     connection.execute(
         """
         UPDATE games
-        SET score_team_a = %s, score_team_b = %s
+        SET score_team_a = %s, score_team_b = %s, player_names = %s
         WHERE id = %s
         """,
-        (body.score_team_a, body.score_team_b, game_id),
+        (
+            body.score_team_a,
+            body.score_team_b,
+            json.dumps(players),
+            game_id,
+        ),
     )
     connection.commit()
     updated = connection.execute(

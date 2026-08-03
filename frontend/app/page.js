@@ -54,6 +54,7 @@ export default function Home() {
     scoringGameId,
     getScoreDraft,
     handleScoreDraftChange,
+    handlePlayerTeamChange,
     handleJoinGame,
     handleCancelGame,
     handleSaveScore,
@@ -316,6 +317,7 @@ export default function Home() {
                   onJoin={handleJoinGame}
                   onCancel={handleCancelGame}
                   onScoreDraftChange={handleScoreDraftChange}
+                  onPlayerTeamChange={handlePlayerTeamChange}
                   onSaveScore={handleSaveScore}
                 />
               ))}

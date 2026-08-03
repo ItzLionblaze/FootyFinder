@@ -1,7 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { API_URL } from "../lib/games";
+import { API_URL, playerKey } from "../lib/games";
+
+function buildTeamsFromGame(game) {
+  const teams = {};
+  (game.player_names || []).forEach((player, index) => {
+    if (player.team === "a" || player.team === "b") {
+      teams[playerKey(player, index)] = player.team;
+    }
+  });
+  return teams;
+}
 
 export function useGames(accessToken) {
   const [games, setGames] = useState([]);
@@ -43,25 +53,58 @@ export function useGames(accessToken) {
   }, [loadGames]);
 
   function getScoreDraft(game) {
-    return (
-      scoreDrafts[game.id] || {
+    const existing = scoreDrafts[game.id];
+    if (existing) {
+      return existing;
+    }
+
+    return {
+      score_team_a:
+        game.score_team_a != null ? String(game.score_team_a) : "",
+      score_team_b:
+        game.score_team_b != null ? String(game.score_team_b) : "",
+      teams: buildTeamsFromGame(game),
+    };
+  }
+
+  function handleScoreDraftChange(gameId, field, value) {
+    setScoreDrafts((prev) => {
+      const current = prev[gameId] || {
+        score_team_a: "",
+        score_team_b: "",
+        teams: {},
+      };
+      return {
+        ...prev,
+        [gameId]: {
+          ...current,
+          [field]: value,
+        },
+      };
+    });
+  }
+
+  function handlePlayerTeamChange(game, player, index, team) {
+    const key = playerKey(player, index);
+    setScoreDrafts((prev) => {
+      const current = prev[game.id] || {
         score_team_a:
           game.score_team_a != null ? String(game.score_team_a) : "",
         score_team_b:
           game.score_team_b != null ? String(game.score_team_b) : "",
-      }
-    );
-  }
-
-  function handleScoreDraftChange(gameId, field, value) {
-    setScoreDrafts((prev) => ({
-      ...prev,
-      [gameId]: {
-        score_team_a: prev[gameId]?.score_team_a ?? "",
-        score_team_b: prev[gameId]?.score_team_b ?? "",
-        [field]: value,
-      },
-    }));
+        teams: buildTeamsFromGame(game),
+      };
+      return {
+        ...prev,
+        [game.id]: {
+          ...current,
+          teams: {
+            ...(current.teams || {}),
+            [key]: team,
+          },
+        },
+      };
+    });
   }
 
   async function handleJoinGame(gameId) {
@@ -135,6 +178,25 @@ export function useGames(accessToken) {
       return;
     }
 
+    const players = game.player_names || [];
+    const unassigned = players.filter((player, index) => {
+      const team = draft.teams?.[playerKey(player, index)];
+      return team !== "a" && team !== "b";
+    });
+    if (players.length > 0 && unassigned.length > 0) {
+      setGamesError(
+        "Assign every player to Team A or Team B before saving the score.",
+      );
+      return;
+    }
+
+    const playerTeams = players.map((player, index) => ({
+      user_id: player.user_id ?? null,
+      first_name: player.first_name || "",
+      last_name: player.last_name || "",
+      team: draft.teams?.[playerKey(player, index)] || null,
+    }));
+
     setScoringGameId(game.id);
     setGamesError("");
     try {
@@ -147,6 +209,7 @@ export function useGames(accessToken) {
         body: JSON.stringify({
           score_team_a: scoreTeamA,
           score_team_b: scoreTeamB,
+          player_teams: playerTeams,
         }),
       });
       if (!response.ok) {
@@ -177,6 +240,7 @@ export function useGames(accessToken) {
     scoringGameId,
     getScoreDraft,
     handleScoreDraftChange,
+    handlePlayerTeamChange,
     handleJoinGame,
     handleCancelGame,
     handleSaveScore,

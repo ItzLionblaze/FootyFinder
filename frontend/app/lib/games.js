@@ -38,6 +38,21 @@ export function getHost(game) {
   return host || game.player_names?.[0] || null;
 }
 
+export function playerKey(player, index) {
+  if (player?.user_id != null) {
+    return `u:${player.user_id}`;
+  }
+  return `i:${index}:${player?.first_name || ""}:${player?.last_name || ""}`;
+}
+
+export function playersOnTeam(game, team) {
+  return (game.player_names || []).filter((player) => player.team === team);
+}
+
+export function formatPlayerName(player) {
+  return `${player.first_name || ""} ${player.last_name || ""}`.trim() || "Player";
+}
+
 export function userIsInGame(game, user) {
   if (!user) {
     return false;
