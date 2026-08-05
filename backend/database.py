@@ -86,6 +86,28 @@ def get_user_by_id(user_id):
     return row
 
 
+def get_user_emails_by_ids(user_ids):
+    """Return verified Google account emails for the given user ids."""
+    ids = sorted({int(user_id) for user_id in user_ids if user_id is not None})
+    if not ids:
+        return []
+
+    connection = get_connection()
+    placeholders = ", ".join(["%s"] * len(ids))
+    rows = connection.execute(
+        f"SELECT id, email FROM users WHERE id IN ({placeholders})",
+        ids,
+    ).fetchall()
+    connection.close()
+
+    emails = []
+    for row in rows:
+        email = (row.get("email") or "").strip()
+        if email:
+            emails.append(email)
+    return emails
+
+
 def upsert_user(google_id, email, first_name, last_name, picture):
     connection = get_connection()
     existing = connection.execute(

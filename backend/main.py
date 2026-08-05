@@ -1,5 +1,6 @@
 from typing import Optional
 from pathlib import Path
+import logging
 import os
 
 from dotenv import load_dotenv
@@ -15,12 +16,16 @@ from database import (
     build_player,
     get_connection,
     get_user_by_id,
+    get_user_emails_by_ids,
     init_db,
     init_users_table,
     row_to_game,
     row_to_user,
     upsert_user,
 )
+from email_notify import notify_game_confirmed, smtp_configured
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="FootyFinder API")
 
@@ -96,6 +101,7 @@ def health_check():
         "google_client_id_configured": bool(
             (os.environ.get("GOOGLE_CLIENT_ID") or "").strip()
         ),
+        "smtp_configured": smtp_configured(),
     }
 
 
@@ -407,6 +413,7 @@ def join_game(game_id: int, authorization: Optional[str] = Header(None)):
         raise HTTPException(status_code=404, detail="Game not found")
 
     game = row_to_game(row)
+    previous_status = game["status"]
 
     if game["status"] == "cancelled":
         connection.close()
@@ -460,7 +467,30 @@ def join_game(game_id: int, authorization: Optional[str] = Header(None)):
         "SELECT * FROM games WHERE id = %s", (game_id,)
     ).fetchone()
     connection.close()
-    return row_to_game(updated)
+
+    updated_game = row_to_game(updated)
+    newly_confirmed = previous_status == "looking_for_players" and updated_game[
+        "status"
+    ] in {"confirmed", "full"}
+
+    if newly_confirmed:
+        user_ids = [
+            player.get("user_id")
+            for player in updated_game.get("player_names") or []
+            if player.get("user_id") is not None
+        ]
+        if updated_game.get("host_user_id") is not None:
+            user_ids.append(updated_game["host_user_id"])
+        try:
+            emails = get_user_emails_by_ids(user_ids)
+            notify_game_confirmed(updated_game, emails)
+        except Exception:
+            # Joining should still succeed even if email delivery fails.
+            logger.exception(
+                "Failed to send confirmation emails for game %s", game_id
+            )
+
+    return updated_game
 
 
 @app.patch("/games/{game_id}/score")
